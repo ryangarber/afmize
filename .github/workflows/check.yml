@@ -1,8 +1,8 @@
-name: Check
+name: check
 
 on:
   push:
-  workflow_call:
+  pull_request:
   workflow_dispatch:
 
 jobs:

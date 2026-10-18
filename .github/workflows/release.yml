@@ -1,28 +1,52 @@
-name: Release
+name: release
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  # Every push to main or dev that passes its checks dry-runs the release.
+  workflow_run:
+    workflows:
+      - check
+    types:
+      - completed
+    branches:
+      - main
+      - dev
+  # Releases for real, from main.
+  workflow_dispatch:
 
 permissions:
   contents: write
 
-jobs:
-  check:
-    name: Check
-    uses: ./.github/workflows/check.yml
+concurrency:
+  # Under workflow_run, github.ref is always the default branch.
+  group: release-${{ github.event.workflow_run.head_branch || github.ref_name }}
+  cancel-in-progress: false
 
+jobs:
   release:
-    name: Release
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
-    needs: check
-    
+    env:
+      DRY_RUN: ${{ github.event_name != 'workflow_dispatch' || github.ref_name != 'main' }}
+
     steps:
+      # A dispatch checks out the branch itself, so the release commit can be
+      # pushed to it.
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
         with:
-          generate_release_notes: true
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          fetch-depth: 0
 
+      # A Swift package has no package.json: the version comes from its tags.
+      - name: Release
+        uses: ryangarber/rylease@v2
+        with:
+          dry-run: ${{ env.DRY_RUN }}
+          steps: |
+            - uses: conventional
+              with:
+                read-package-json: false
+                write-package-json: false
