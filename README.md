@@ -1,8 +1,16 @@
 # afmize
 
-A Swift package that exposes Apple's FoundationModels SDK (macOS 26 / iOS 26 and later) — both the
-**on-device** model and **Private Cloud Compute** — to host applications such as a Tauri v2
-app, on both macOS and iOS.
+Apple's FoundationModels SDK (macOS 26 / iOS 26 and later), both the **on-device** model
+and **Private Cloud Compute**, behind a JSON protocol and a C ABI that any host can reach.
+
+| Package | For | How |
+| --- | --- | --- |
+| `afmize` (this Swift package) | Swift, C, Rust | `import afmize`, or link it and call [`include/afmize.h`](include/afmize.h) |
+| [`@afmize/node`](packages/node) | Bun and Node on macOS | FFI to a prebuilt `libafmize.dylib` it ships |
+| [`@afmize/capacitor`](packages/capacitor) | Capacitor apps on iOS | A plugin that `cap sync` adds; no Xcode changes |
+
+All three are released together, under one version: `@afmize/capacitor@x.y.z` builds the
+Swift package tagged `vx.y.z`, and `@afmize/node@x.y.z` ships its library.
 
 It speaks an [AI SDK](https://ai-sdk.dev)-flavored JSON protocol:
 
@@ -11,6 +19,9 @@ It speaks an [AI SDK](https://ai-sdk.dev)-flavored JSON protocol:
   `LanguageModelV3FunctionTool[]`-like tool definitions (name, description, JSON Schema input).
 - **Out:** a realtime event stream (`text-delta`, `reasoning-delta`, `file`, `tool-call`,
   `error`, `finish` with usage).
+
+For the AI SDK itself, [`@ryangarber/ai-sdk-providers/afm`](https://github.com/ryangarber/ai-sdk-providers)
+is a provider over any of the JavaScript clients.
 
 Tools are **never executed in Swift**. When the model calls one or more tools, all tool calls
 of the turn are emitted as `tool-call` events and the stream finishes with reason
@@ -43,7 +54,10 @@ for await eventJSON in Afmize.eventStream(requestJSON: requestJSON) {
 }
 ```
 
-### C FFI (for Rust / Tauri)
+### C ABI
+
+Declared in [`include/afmize.h`](include/afmize.h), which every release attaches along with
+a prebuilt `libafmize.dylib` (Apple silicon):
 
 ```c
 // Heap-allocated JSON string; free with afmize_string_free.
@@ -51,17 +65,40 @@ char *afmize_availability(void);
 void afmize_string_free(char *ptr);
 
 // Starts a stream; returns a stream id (-1 on invalid arguments).
-// The callback is invoked serially, once per event, with a NUL-terminated
-// UTF-8 JSON string valid only for the duration of the call. After the final
-// "finish" event the callback is invoked once more with NULL (no further
+// The callback is invoked serially, once per event, from afmize's own threads,
+// with a NUL-terminated UTF-8 JSON string that the callee owns: free it with
+// afmize_string_free (it may be read after the callback returns). After the
+// final "finish" event the callback is invoked once more with NULL (no further
 // calls will occur; safe point to free `context`).
-typedef void (*afmize_event_callback)(void *context, const char *event_json);
+typedef void (*afmize_event_callback)(void *context, char *event_json);
 int64_t afmize_stream_start(const char *request_json, void *context, afmize_event_callback callback);
 
 // Cancels a running stream. A "finish" (reason "other") and the NULL sentinel
 // are still delivered.
 void afmize_stream_cancel(int64_t stream_id);
 ```
+
+### JavaScript
+
+`@afmize/node` and `@afmize/capacitor` both create an `AfmizeClient`:
+
+```ts
+import { createAfmize } from "@afmize/node"; // or "@afmize/capacitor"
+
+const afmize = createAfmize();
+
+// { onDevice: { available: true }, privateCloudCompute: { available: false, reason: "..." } }
+const availability = await afmize.availability();
+
+for await (const event of afmize.stream(request, { signal })) {
+  // each element is one event, parsed
+}
+```
+
+A client never throws: where afmize can't be reached (another platform, an older OS, a
+missing plugin), it reports both models unavailable, and each stream ends with an `error`
+event and `finish`. Each package also exports `createEventStream`, for a client of your own
+over another transport (e.g. a webview's IPC to a process using `@afmize/node`).
 
 ## Request JSON
 
@@ -135,15 +172,10 @@ Error codes include `model-unavailable`, `context-size-exceeded`, `rate-limited`
 `pcc-service-unavailable`, `assets-unavailable`, `concurrent-requests`, `invalid-request`,
 `unsupported-content`, and `unknown`.
 
-## Using from a Tauri v2 app (macOS and iOS)
+## Using from Rust
 
-The same setup covers both platforms: link this package into the Rust core with
-[`swift-rs`](https://crates.io/crates/swift-rs), declare the four C symbols, and forward
-events to the webview over a Tauri channel. On macOS the Rust binary is the final link
-product; on iOS the Rust static library and the Swift package are linked together into the
-generated Xcode app — the same `extern "C"` symbols resolve in both cases.
-
-### 1. Link the package (src-tauri/Cargo.toml + build.rs)
+The core depends on nothing, so [`swift-rs`](https://crates.io/crates/swift-rs)'s
+`SwiftLinker` can build and link it, and the C ABI needs no SwiftRs types:
 
 ```toml
 [build-dependencies]
@@ -151,7 +183,7 @@ swift-rs = { version = "1", features = ["build"] }
 ```
 
 ```rust
-// src-tauri/build.rs
+// build.rs
 use swift_rs::SwiftLinker;
 
 fn main() {
@@ -159,116 +191,34 @@ fn main() {
         .with_ios("26.0")               // iOS deployment target
         .with_package("afmize", "../path/to/afmize") // path to this repo
         .link();
-    tauri_build::build();
 }
 ```
 
-### 2. Declare the FFI and expose Tauri commands (src-tauri/src/lib.rs)
-
 ```rust
-use std::ffi::{c_char, c_void, CStr, CString};
-use tauri::ipc::Channel;
+use std::ffi::{c_char, c_void, CStr};
 
-type EventCallback = unsafe extern "C" fn(*mut c_void, *const c_char);
+type EventCallback = unsafe extern "C" fn(*mut c_void, *mut c_char);
 
 unsafe extern "C" {
     fn afmize_availability() -> *mut c_char;
     fn afmize_string_free(ptr: *mut c_char);
-    fn afmize_stream_start(
-        request_json: *const c_char,
-        context: *mut c_void,
-        callback: EventCallback,
-    ) -> i64;
+    fn afmize_stream_start(request_json: *const c_char, context: *mut c_void, callback: EventCallback) -> i64;
     fn afmize_stream_cancel(stream_id: i64);
 }
 
-unsafe extern "C" fn on_event(context: *mut c_void, event_json: *const c_char) {
+unsafe extern "C" fn on_event(context: *mut c_void, event_json: *mut c_char) {
     if event_json.is_null() {
-        // Terminal sentinel: reclaim the channel and stop.
-        drop(unsafe { Box::from_raw(context as *mut Channel<serde_json::Value>) });
+        // Terminal sentinel: reclaim `context` here.
         return;
     }
-    let channel = unsafe { &*(context as *const Channel<serde_json::Value>) };
-    let json = unsafe { CStr::from_ptr(event_json) }.to_string_lossy();
-    if let Ok(value) = serde_json::from_str(&json) {
-        let _ = channel.send(value);
-    }
-}
-
-#[tauri::command]
-fn afm_availability() -> String {
-    unsafe {
-        let ptr = afmize_availability();
-        let out = CStr::from_ptr(ptr).to_string_lossy().into_owned();
-        afmize_string_free(ptr);
-        out
-    }
-}
-
-#[tauri::command]
-fn afm_stream(request: serde_json::Value, on_event_channel: Channel<serde_json::Value>) -> i64 {
-    let request = CString::new(request.to_string()).unwrap();
-    let context = Box::into_raw(Box::new(on_event_channel)) as *mut c_void;
-    unsafe { afmize_stream_start(request.as_ptr(), context, on_event) }
-}
-
-#[tauri::command]
-fn afm_cancel(stream_id: i64) {
-    unsafe { afmize_stream_cancel(stream_id) }
-}
-
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![afm_availability, afm_stream, afm_cancel])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    let json = unsafe { CStr::from_ptr(event_json) }.to_string_lossy().into_owned();
+    unsafe { afmize_string_free(event_json) };
+    // handle `json`
 }
 ```
 
-### 3. Call it from the webview
-
-```ts
-import { invoke, Channel } from "@tauri-apps/api/core";
-
-const availability = JSON.parse(await invoke<string>("afm_availability"));
-
-const events = new Channel<any>();
-events.onmessage = (event) => {
-  switch (event.type) {
-    case "text-delta":      /* append event.delta */ break;
-    case "reasoning-delta": /* append event.delta */ break;
-    case "tool-call":       /* queue { toolCallId, toolName, input: JSON.parse(event.input) } */ break;
-    case "error":           /* surface event.code / event.message */ break;
-    case "finish":
-      // event.finishReason === "tool-calls": run the queued tools, then
-      // invoke("afm_stream") again with assistant tool-call parts and
-      // tool role tool-result parts appended to `messages`.
-      break;
-  }
-};
-
-const streamId = await invoke<number>("afm_stream", {
-  request: {
-    model: "on-device",
-    messages: [{ role: "user", parts: [{ type: "text", text: "Hello!" }] }],
-  },
-  onEventChannel: events,
-});
-
-// later, if needed:
-await invoke("afm_cancel", { streamId });
-```
-
-### Platform notes
-
-- **macOS:** nothing else — `swift-rs` compiles the package and links it (plus the Swift
-  runtime and FoundationModels) into the Tauri binary.
-- **iOS:** run `tauri ios init` / `tauri ios dev` as usual. The Rust staticlib built by cargo
-  (which now embeds afmize) is linked into the generated Xcode project; no changes to
-  `src-tauri/gen/apple` are required. Build with Xcode 27 against the iOS 27 SDK.
-- The webview never talks to Swift directly; everything flows through the Rust commands, so
-  the JS code is identical on both platforms.
+On iOS, the Rust static library and the Swift package are linked together into the app;
+the same `extern "C"` symbols resolve on both platforms.
 
 ## Development
 
@@ -276,4 +226,13 @@ await invoke("afm_cancel", { streamId });
 swift build          # macOS build
 swift test           # unit tests + live smoke tests (auto-skip without Apple Intelligence)
 xcodebuild -scheme afmize -destination 'generic/platform=iOS' build   # iOS compile check
+
+pnpm install
+pnpm prebuild debug  # packages/node/prebuilds/darwin-arm64/libafmize.dylib
+pnpm build && pnpm test
+(cd packages/capacitor && pnpm verify:ios)   # the plugin, against this checkout's core
 ```
+
+Inside this repository, the Capacitor plugin's `Package.swift` uses the core beside it, so
+an app can `link:` to `packages/capacitor` (and `packages/node`) to develop against a
+checkout; installed from npm, it uses the release tagged with its version.

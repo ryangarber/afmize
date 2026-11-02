@@ -1,0 +1,29 @@
+{
+	"name": "afmize-workspace",
+	"private": true,
+	"type": "module",
+	"description": "afmize's JavaScript clients; the Swift package is at the root.",
+	"scripts": {
+		"prebuild": "node ./scripts/prebuild.ts",
+		"build": "pnpm -r build",
+		"typecheck": "pnpm -r typecheck",
+		"test": "pnpm -r test",
+		"lint": "node ./scripts/lint.ts && node ./scripts/format.ts"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.6.4",
+		"@ryangarber/utils": "^0.1.6",
+		"@types/node": "^26.6.6",
+		"knip": "^6.44.1",
+		"tsdown": "^0.23.5",
+		"typescript": "^7.0.2"
+	},
+	"devEngines": {
+		"runtime": {
+			"name": "node",
+			"version": "26.13.0",
+			"onFail": "download"
+		}
+	},
+	"packageManager": "pnpm@12.16.1"
+}

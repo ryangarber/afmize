@@ -1,0 +1,53 @@
+{
+	"name": "@afmize/node",
+	"version": "1.0.2",
+	"description": "Apple Foundation Models for Bun and Node, through afmize's C ABI.",
+	"type": "module",
+	"files": [
+		"dist",
+		"prebuilds"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.mts",
+			"browser": "./dist/browser.mjs",
+			"bun": "./dist/bun.mjs",
+			"default": "./dist/index.mjs"
+		}
+	},
+	"scripts": {
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit",
+		"test": "node --test test/*.test.ts",
+		"prepublishOnly": "test -f prebuilds/darwin-arm64/libafmize.dylib && pnpm build"
+	},
+	"peerDependencies": {
+		"koffi": "^3.3.0"
+	},
+	"peerDependenciesMeta": {
+		"koffi": {
+			"optional": true
+		}
+	},
+	"devDependencies": {
+		"@afmize/protocol": "workspace:*",
+		"bun-types": "^1.4.4",
+		"koffi": "^3.3.6"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/ryangarber/afmize.git",
+		"directory": "packages/node"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"keywords": [
+		"afmize",
+		"apple-foundation-models",
+		"foundation-models",
+		"apple-intelligence",
+		"bun",
+		"ffi"
+	]
+}

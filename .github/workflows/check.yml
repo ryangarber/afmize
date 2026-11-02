@@ -30,3 +30,38 @@ jobs:
           deviceName: ${{ matrix.deviceName }}
           osVersion: ${{ matrix.osVersion }}
           download-platform: true
+
+  clients:
+    name: Check clients
+    runs-on: xcode-27
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install dependencies
+        uses: pnpm/setup@v3
+        with:
+          cache: true
+
+      - name: Lint
+        run: pnpm biome check
+
+      - name: Build afmize
+        run: pnpm prebuild debug
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      # Against the library just built; without Apple Intelligence on the
+      # runner, it still checks every stream starts and finishes.
+      - name: Test
+        run: pnpm test
+
+      # Against the core in this checkout, not a release.
+      - name: Build Capacitor plugin
+        working-directory: packages/capacitor
+        run: pnpm verify:ios

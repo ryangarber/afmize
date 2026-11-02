@@ -407,14 +407,13 @@ func liveToolResultContinuation() async throws {
   #expect(!text.isEmpty)
 }
 
-
 // These checks run on a 26 host without requiring Apple Intelligence.
 @Test func rejectsUnavailableFeaturesOn26() async throws {
   guard #unavailable(macOS 27.0, iOS 27.0) else { return }
   for extra in [
     #""model":"private-cloud-compute""#,
     #""reasoningLevel":"deep""#,
-    #""toolChoice":"required""#
+    #""toolChoice":"required""#,
   ] {
     let events = await collectEvents("{\(extra),\"messages\":[]}")
     #expect(events.map(\.type) == ["stream-start", "error", "finish"])
@@ -424,9 +423,13 @@ func liveToolResultContinuation() async throws {
   for role in [AfmRole.user, .assistant] {
     #expect(throws: AfmSetupError.self) {
       try TranscriptBuilder.build(
-        messages: [AfmMessage(role: role, parts: [
-          AfmPart(type: .file, mediaType: "image/png", data: "https://example.com/image.png")
-        ])], toolDefinitions: [])
+        messages: [
+          AfmMessage(
+            role: role,
+            parts: [
+              AfmPart(type: .file, mediaType: "image/png", data: "https://example.com/image.png")
+            ])
+        ], toolDefinitions: [])
     }
   }
 }

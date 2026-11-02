@@ -149,7 +149,8 @@ public enum Afmize {
     }
 
     if #available(macOS 27.0, iOS 27.0, *) {
-      await stream(session: session, prompt: prompt, request: request, hasTools: hasTools, emit: emit)
+      await stream(
+        session: session, prompt: prompt, request: request, hasTools: hasTools, emit: emit)
     } else {
       await streamText(session: session, prompt: prompt, request: request, emit: emit)
     }

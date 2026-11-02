@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write # trusted publishing to npm
 
 concurrency:
   # Under workflow_run, github.ref is always the default branch.
@@ -27,7 +28,8 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push')
-    runs-on: ubuntu-latest
+    # The library @afmize/node ships needs the macOS 27 SDK to build.
+    runs-on: xcode-27
     env:
       DRY_RUN: ${{ github.event_name != 'workflow_dispatch' || github.ref_name != 'main' }}
 
@@ -40,13 +42,51 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
           fetch-depth: 0
 
-      # A Swift package has no package.json: the version comes from its tags.
+      # Installs dependencies, for npm/publish's prepublishOnly builds.
+      - name: Install dependencies
+        uses: pnpm/setup@v3
+        with:
+          cache: true
+
+      # Into packages/node/prebuilds, which @afmize/node ships and the
+      # release attaches.
+      - name: Build afmize
+        run: pnpm prebuild release
+
+      # One version for the Swift package and both clients: the tag
+      # (v{version}) is the Swift package's, the clients' package.json files
+      # and the Capacitor plugin's Package.swift are written to match it, so
+      # each @afmize/capacitor resolves the core it was released with.
       - name: Release
-        uses: ryangarber/rylease@v2
+        uses: ryangarber/rylease@v3
         with:
           dry-run: ${{ env.DRY_RUN }}
           steps: |
             - uses: conventional
+            - uses: fs/write-version
               with:
-                read-package-json: false
-                write-package-json: false
+                format: npm
+                path:
+                  - packages/node/package.json
+                  - packages/capacitor/package.json
+            - uses: fs/write-version
+              with:
+                format: pattern
+                path: packages/capacitor/Package.swift
+                pattern: 'let version: Version = "{version}"'
+            - uses: fs/write-changes
+            - uses: git/commit
+            # For hosts that link the C ABI themselves.
+            - uses: github/upload-release-assets
+              with:
+                files:
+                  - packages/node/prebuilds/darwin-arm64/libafmize.dylib
+                  - include/afmize.h
+                dryRunArtifact: true
+                artifactName: afmize-darwin-arm64
+            - uses: npm/publish
+              with:
+                path: packages/node
+            - uses: npm/publish
+              with:
+                path: packages/capacitor
