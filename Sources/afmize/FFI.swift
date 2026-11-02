@@ -1,15 +1,16 @@
 import Foundation
 import Synchronization
 
-/// C ABI surface for host applications (e.g. the Rust core of a Tauri app).
+/// C ABI surface for host applications (declared in `include/afmize.h`).
 ///
 /// Contract:
 /// - `afmize_stream_start(requestJSON, context, callback)` starts a stream and
 ///   returns a stream id (or -1 on invalid arguments). The callback is invoked
-///   serially, once per event, with a NUL-terminated UTF-8 JSON string. The
-///   pointer is only valid for the duration of the callback. After the final
-///   `finish` event the callback is invoked once more with NULL to signal that
-///   no further calls will occur (safe point to free `context`).
+///   serially, once per event, with a NUL-terminated UTF-8 JSON string that
+///   the callee owns and frees with `afmize_string_free`, so a host may read
+///   it after the callback returns (e.g. once its own event loop runs). After
+///   the final `finish` event the callback is invoked once more with NULL to
+///   signal that no further calls will occur (safe point to free `context`).
 /// - `afmize_stream_cancel(id)` cancels a running stream. A `finish` event
 ///   (reason `other`) and the NULL sentinel are still delivered.
 /// - `afmize_availability()` returns a heap-allocated JSON string; free it

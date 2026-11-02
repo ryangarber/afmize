@@ -1,0 +1,54 @@
+{
+	"name": "@afmize/capacitor",
+	"version": "1.0.2",
+	"description": "Apple Foundation Models for Capacitor apps on iOS, through afmize.",
+	"type": "module",
+	"files": [
+		"dist",
+		"ios/Sources",
+		"Package.swift"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"capacitor": {
+		"ios": {
+			"src": "ios"
+		}
+	},
+	"scripts": {
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit",
+		"verify:ios": "xcodebuild build -scheme AfmizeCapacitor -destination generic/platform=iOS",
+		"prepublishOnly": "pnpm build"
+	},
+	"peerDependencies": {
+		"@capacitor/core": ">=8.0.0"
+	},
+	"devDependencies": {
+		"@afmize/protocol": "workspace:*",
+		"@capacitor/core": "^8.6.0"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/ryangarber/afmize.git",
+		"directory": "packages/capacitor"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"keywords": [
+		"afmize",
+		"capacitor",
+		"capacitor-plugin",
+		"apple-foundation-models",
+		"foundation-models",
+		"apple-intelligence",
+		"ios"
+	]
+}
