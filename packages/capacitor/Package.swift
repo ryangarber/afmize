@@ -5,7 +5,7 @@ import PackageDescription
 
 /// afmize's version: the plugin is released in lockstep with the core, and
 /// rylease writes it here.
-let version: Version = "1.0.2"
+let version: Version = "1.1.0"
 
 /// Inside afmize's repository (developing it, or an app `link:`ed to it), the
 /// core is the one beside the plugin; installed from npm, it is the release

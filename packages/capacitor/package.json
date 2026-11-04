@@ -1,6 +1,6 @@
 {
 	"name": "@afmize/capacitor",
-	"version": "1.0.2",
+	"version": "1.1.0",
 	"description": "Apple Foundation Models for Capacitor apps on iOS, through afmize.",
 	"type": "module",
 	"files": [
