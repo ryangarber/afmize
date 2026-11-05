@@ -179,7 +179,7 @@ importers:
         specifier: ^6.44.1
         version: 6.44.1
       node:
-        specifier: runtime:26.13.0
+        specifier: runtime:>=24 <27
         version: runtime:26.13.0
       tsdown:
         specifier: ^0.23.5
